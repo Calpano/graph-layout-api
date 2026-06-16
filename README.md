@@ -13,9 +13,10 @@ import { layout } from 'grale';
 const out = layout(graphJson);   // graleGraph -> graleGraph (positions filled in)
 ```
 
-> **Status: specification.** This repository defines the API. The full normative spec lives in
-> [`doc/spec-grale-api.adoc`](doc/spec-grale-api.adoc); the dagre baseline it supersets is in
-> [`doc/dagre-js.adoc`](doc/dagre-js.adoc).
+> **Status: specification — version 1.0.0.** This repository defines the API. The full normative
+> spec lives in [`doc/spec-grale-api.adoc`](doc/spec-grale-api.adoc); the dagre baseline it
+> supersets is in [`doc/dagre-js.adoc`](doc/dagre-js.adoc). See
+> [`CHANGELOG.md`](CHANGELOG.md) for the release history.
 
 ---
 
@@ -97,6 +98,7 @@ semantics, plus the TypeScript definitions and the compatibility matrix.
 | [`doc/spec-grale-api.adoc`](doc/spec-grale-api.adoc) | The normative grale API specification                      |
 | [`doc/dagre-js.adoc`](doc/dagre-js.adoc)             | The dagre serialised-JSON baseline grale supersets         |
 | [`doc/dagre-issues.adoc`](doc/dagre-issues.adoc)     | Snapshot of open dagre issues that motivated the additions |
+| [`CHANGELOG.md`](CHANGELOG.md)                        | Release history; current version **1.0.0**                 |
 
 ## License
 

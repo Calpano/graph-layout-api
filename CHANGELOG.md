@@ -1,0 +1,43 @@
+# Changelog
+
+All notable changes to the grale API specification are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+Because grale is defined as a **data format** (JSON in, JSON out) rather than a
+library, version numbers describe the specification, not a published package:
+
+- **MAJOR** — a change that makes a previously valid request invalid, or changes
+  the meaning of an existing field.
+- **MINOR** — new optional fields or capabilities; every prior request stays valid.
+- **PATCH** — clarifications, wording, and editorial fixes with no semantic change.
+
+## [1.0.0] - 2026-06-16
+
+First stable release of the grale API specification.
+
+### Added
+- **Positioning** — `pinned` (hard-fix a node at its `x`/`y`) and `focus`
+  (centre the layout on a node or set).
+- **Stability** — `prevLayouts` + `stability` to keep nodes near where they were
+  across turns, even after a node disappears and returns.
+- **Edge direction** — per-edge `prefDir` (rotates with `rankdir`), `hidden` links
+  (constrain layout, not drawn), and `weight: 0` (drawn, doesn't constrain).
+- **Attachment** — per-side `ports` (counter-clockwise) with `fromPort`/`toPort`;
+  reusable `markers` (SVG-defs style, reserve space) with `startMarker`/`endMarker`.
+- **Edges** — `lineWidth`, `cornerRadius`, self-loops, edges across cluster
+  boundaries, and an optional `id`.
+- **Hyperedges** — n-ary `hyperedges[]`, a set of node endpoints routed as a
+  point-tree.
+- **Output** — per-point `normals`, edge `crossings`, `zIndex`, and a
+  `diagnostics` object (warnings, timing, displacement) that dagre does not return.
+- **Passthrough** — `meta` on any label for renderer data the layouter ignores.
+- **Debug** — `logLevel` and `visualDebug`.
+
+### Compatibility
+- Strict superset of the dagre serialised JSON envelope (graphlib's `json.write`
+  format). Any serialised dagre graph is a valid grale request **unchanged**;
+  grale only adds optional fields.
+
+[1.0.0]: https://github.com/dagrejs/graph-layout-api/releases/tag/v1.0.0
