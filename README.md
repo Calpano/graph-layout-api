@@ -1,8 +1,8 @@
 # grale api -- a Graph Layout Engine API
 
-**A graph-layout API for TypeScript — a strict superset of [dagre](https://github.com/dagrejs/dagre).**
+grale is a **gra**ph **l**ayout **e**ngine API, defined as JSON input and output specifications.
 
-Grale is defined as a **data format**: JSON in, JSON out. It takes the serialised form of a
+It takes the serialised form of a
 dagre graph (graphlib's `json.write` format) and returns the same structure with positions
 filled in — plus a set of capabilities dagre lacks. Any dagre graph is a valid grale request
 **unchanged**; grale only adds optional fields.
