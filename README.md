@@ -1,4 +1,4 @@
-# grale api -- a Graph Layout Engine API
+# grale - a Graph Layout Engine API
 
 grale is a **gra**ph **l**ayout **e**ngine API, defined as JSON input and output specifications.
 
