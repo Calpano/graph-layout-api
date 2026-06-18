@@ -59,4 +59,4 @@ First stable release of the grale API specification.
   format). Any serialised dagre graph is a valid grale request **unchanged**;
   grale only adds optional fields.
 
-[1.0.0]: https://github.com/dagrejs/graph-layout-api/releases/tag/v1.0.0
+[1.0.0]: https://github.com/Calpano/grale-api/releases/tag/v1.0.0
