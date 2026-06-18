@@ -7,10 +7,10 @@ is a valid grale request **unchanged**; grale only adds optional fields.
 
 This repository has **two core parts**, each in its own directory with its own README:
 
-| Part | Directory | What it is |
-|---|---|---|
-| **Layout API** | [`api/`](api/) — [README](api/README.md) | The JSON layout contract (the `graleGraph` types), the engine **adapters** that fulfil it (`grale-dagre`, `grale-elk`, or any stdin→stdout command), and the normative spec. *What a layout is, and how engines produce one.* |
-| **Engine-independent runner** | [`viewer/`](viewer/) — [README](viewer/README.md) | The DOM-free SVG **renderer** and the `<grale-view>` web component that draw a grale result from **any** engine, plus the `grale-to-svg` CLI. *How a layout — whoever produced it — gets viewed.* |
+| Part                          | Directory                                         | What it is                                                                                                                                                                                                                    |
+|-------------------------------|---------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Layout API**                | [`api/`](api/) — [README](api/README.md)          | The JSON layout contract (the `graleGraph` types), the engine **adapters** that fulfil it (`grale-dagre`, `grale-elk`, or any stdin→stdout command), and the normative spec. *What a layout is, and how engines produce one.* |
+| **Engine-independent runner** | [`viewer/`](viewer/) — [README](viewer/README.md) | The DOM-free SVG **renderer** and the `<grale-view>` web component that draw a grale result from **any** engine, plus the `grale-to-svg` CLI. *How a layout — whoever produced it — gets viewed.*                             |
 
 ```
    api/  ── grale JSON contract + engine adapters ──▶  a grale result graph

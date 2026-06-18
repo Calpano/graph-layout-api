@@ -1,5 +1,5 @@
 {
-  "name": "grale",
+  "name": "grale-api",
   "version": "1.0.0",
   "type": "module",
   "description": "grale — a graph layout engine API, defined as JSON input/output types (a strict superset of the dagre serialised JSON structure), with an SVG renderer, engine adapters (dagre, elk), a CLI and a <grale-view> web component",
