@@ -165,6 +165,7 @@ structure with positions filled in.
 | any `value`    | `meta`                 | opaque passthrough data (renderer-side; never warns)
 | output edge    | `normals` / `crossings` | per-point path normals; unavoidable crossing positions
 | output         | `diagnostics`          | warnings, timing, displacement (dagre returns none)
+| output         | `debug`                | named, nestable debug overlay layers (line/circle/rect/text)
 |===
 
 [[part-ii-detailed-reference]]
@@ -247,6 +248,18 @@ The dagre node fields (`width`, `height` in; `x`, `y` out) are unchanged — see
 | `zIndex` | number | draw order (in/out); higher draws on top — see <<routing-output>>
 | `meta`   | object | opaque passthrough, ignored by the layouter — see <<meta>>
 |===
+
+[NOTE]
+.Estimating `width`/`height` from a label
+====
+`width`/`height` are required inputs, but some producers (e.g. converters from formats that
+store only a label) have no real font metrics. They may *estimate* a node box from
+`meta.label`: split the text on `<br>` (see <<label-text>>), word-wrap each part to a maximum
+line length, measure the widest line and the line count in a known font, and add padding. The
+reference implementation assumes **Roboto Regular at 16&nbsp;px**, a 50-character wrap width,
+and a deterministic per-character advance table (so equal input yields equal output). The
+result is an estimate; an author-supplied `width`/`height` always wins.
+====
 
 [[edge-label-additions]]
 === Edge label additions (`value`)
@@ -589,6 +602,23 @@ flagged `UNKNOWN_FIELD` (likely a typo), while anything *inside* `meta` passes t
 silently. It is how grale carries arbitrary per-element data — colours, label text, types,
 dash patterns — without the layouter needing to understand any of it.
 
+[[label-text]]
+===== Label text and line breaks
+
+The conventional home for display text is `meta.label`, a string. A label may request an
+explicit line break with a `<br>` tag (`<br>`, `<br/>`, or `<br />`, case-insensitive); the
+text is otherwise a single logical line that the renderer may soft-wrap to fit the node box.
+`<br>` is the *only* markup grale recognises in a label — everything else is literal text.
+
+[source,json5]
+----
+{ "v": "n", "value": { "meta": { "label": "Order received<br>(pending review)" } } }
+----
+
+The layouter does not read `meta.label`: node geometry comes from `width`/`height`
+(see <<node-label-additions>>). A producer that has no real font metrics may *estimate*
+`width`/`height` from the label — see the note there.
+
 [[routing-output]]
 ==== Waypoint normals, crossings, and z-order
 
@@ -729,12 +759,71 @@ layouter is — it filters the messages the engine logs and how much detail land
 `diagnostics`: `DEBUG` adds informational notes, `ERROR` keeps only failures.
 `visualDebug`:: boolean, default `false`. When `true`, the result carries extra debug
 geometry a renderer can draw on top of the layout — the routing grid, node bounding boxes,
-waypoint normals, reserved marker / port boxes. Off, the output has none of it.
+waypoint normals, reserved marker / port boxes. This geometry is delivered as the top-level
+`debug` layer tree described in <<debug-layers>>. Off, the output has none of it.
 
 [source,json5]
 ----
 { "value": { "logLevel": "DEBUG", "visualDebug": true } }
 ----
+
+[[debug-layers]]
+==== Debug overlay layers
+
+When an engine produces visual debug geometry (typically under `visualDebug`), it returns it
+as a top-level `debug` array on the envelope — a tree of named *layers* that a renderer draws
+on top of the layout and an interactive viewer can toggle on and off. It is the JSON analogue
+of nested SVG `<g>` groups with simple shapes inside, and is *output only*: the layouter never
+reads it, and a request without it is unaffected (see <<reduction-to-dagre>>).
+
+[source,json5]
+----
+{
+  "debug": [
+    {
+      "kind": "layer", "name": "grid", "opacity": 0.6,
+      "children": [
+        { "kind": "line", "x1": 0, "y1": 0, "x2": 280, "y2": 0, "stroke": "#e2e8f0" }
+      ]
+    },
+    {
+      "kind": "layer", "name": "annotations",
+      "children": [
+        { "kind": "layer", "name": "coords", "children": [
+          { "kind": "text", "x": 60, "y": 38, "text": "(60,60)", "fill": "#ef4444", "anchor": "middle" }
+        ]},
+        { "kind": "layer", "name": "ids", "visible": false, "children": [ /* … */ ] }
+      ]
+    }
+  ]
+}
+----
+
+*Layers* (`kind: "layer"`) are named, nestable groups. A layer carries a `name` (unique among
+its siblings), optional `visible` (default `true` — the initial toggle state) and `opacity`,
+and a `children` array of nested layers and/or leaf shapes, drawn in order. The *path* of layer
+names — e.g. `grid`, `annotations/coords` — identifies a layer, so a viewer can show or hide any
+subtree by its path. A renderer maps each layer to a group it can toggle (the reference renderer
+emits `<g data-layer-path="annotations/coords">`).
+
+*Leaf shapes* are simplified, JSON-only analogues of their SVG counterparts — four kinds, each
+tagged by `kind`:
+
+[cols="1,3",frame=ends]
+|===
+| `kind` | Geometry
+
+| `line`   | `x1`, `y1`, `x2`, `y2`
+| `circle` | `cx`, `cy`, `r`
+| `rect`   | `x`, `y`, `width`, `height`, optional `rx` (corner radius)
+| `text`   | `x`, `y`, `text`, optional `fontSize`, `anchor` (`'start'\|'middle'\|'end'`)
+|===
+
+All shapes share an optional, minimal style — a subset of SVG presentation attributes: `stroke`
+(colour), `strokeWidth`, `fill` (`'none'` for none; on `text` it is the text colour), `opacity`
+(`0..1`), and `dashed`. Omitted values are the renderer's choice. All coordinates and sizes are in
+the grale coordinate model (px, origin top-left, y down — see <<coordinate-model>>), the same
+space as the layout, so the shapes overlay it directly.
 
 [[diagnostics]]
 ==== Diagnostics (output)
@@ -801,8 +890,8 @@ Formally, for a request where:
 the document is a plain `xref:dagre-js.adoc[]` JsonGraph: same keys, same label fields,
 same meanings and defaults. (Computed coordinates may differ — grale is a different
 engine — and the output additionally carries a `diagnostics` object, per-point `normals`,
-any `crossings`, and a computed `zIndex`; otherwise the structure and result shape are
-identical. See the opening callout.)
+any `crossings`, a computed `zIndex`, and — only under `visualDebug` — a `debug` layer tree;
+otherwise the structure and result shape are identical. See the opening callout.)
 
 [[coordinate-model]]
 === Determinism & coordinate model
@@ -923,6 +1012,29 @@ export interface Diagnostics {
   displacement?: { moved: number; totalDx: number; totalDy: number };  // when stability honoured
 }
 
+// --- debug overlay layers (output only) ---
+export interface DebugStyle {
+  stroke?: string;       // stroke / outline colour
+  strokeWidth?: number;
+  fill?: string;         // 'none' for no fill; on text, the text colour
+  opacity?: number;      // 0..1
+  dashed?: boolean;
+}
+export interface DebugLine   extends DebugStyle { kind: 'line';   x1: number; y1: number; x2: number; y2: number; }
+export interface DebugCircle extends DebugStyle { kind: 'circle'; cx: number; cy: number; r: number; }
+export interface DebugRect   extends DebugStyle { kind: 'rect';   x: number; y: number; width: number; height: number; rx?: number; }
+export interface DebugText   extends DebugStyle { kind: 'text';   x: number; y: number; text: string; fontSize?: number; anchor?: 'start' | 'middle' | 'end'; }
+export type DebugShape = DebugLine | DebugCircle | DebugRect | DebugText;
+
+export interface DebugLayer {              // a named, nestable group (like an SVG <g>)
+  kind: 'layer';
+  name: string;                            // unique among siblings; path identifies the layer
+  visible?: boolean;                       // initial toggle state, default true
+  opacity?: number;                        // group opacity, 0..1
+  children: DebugNode[];                   // nested layers and/or leaf shapes, in draw order
+}
+export type DebugNode = DebugLayer | DebugShape;
+
 // --- hyperedges (n-ary) ---
 export interface Endpoint {
   node: string;        // node id
@@ -973,6 +1085,7 @@ export interface graleGraph {
   edges: { v: string; w: string; name?: string; id?: string; value?: EdgeLabel }[];
   hyperedges?: Hyperedge[];
   diagnostics?: Diagnostics;   // out
+  debug?: DebugLayer[];        // out: named, nestable debug overlay layers
 }
 
 export function layout(graph: graleGraph): graleGraph;
@@ -1015,4 +1128,5 @@ export function layout(graph: graleGraph): graleGraph;
 | z-order (`zIndex`)                 | ➕ added | dagre has none
 | diagnostics / warnings on output   | ➕ added | dagre returns none
 | debug toggles (`logLevel`, `visualDebug`) | ➕ added | dagre has none
+| debug overlay layers (`debug`)     | ➕ added | named, nestable; line/circle/rect/text leaves
 |===

@@ -1,0 +1,58 @@
+{
+  "name": "grale",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "grale — a graph layout engine API, defined as JSON input/output types (a strict superset of the dagre serialised JSON structure), with an SVG renderer, CLI and web-component viewer",
+  "license": "MIT",
+  "author": "Dr. Max Völkel <mv@maxvoelkel.de>",
+  "types": "./dist/grale/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/grale/index.d.ts",
+      "default": "./dist/grale/index.js"
+    },
+    "./render": {
+      "types": "./dist/grale/render/index.d.ts",
+      "default": "./dist/grale/render/index.js"
+    },
+    "./metrics": {
+      "types": "./dist/grale/metrics/index.d.ts",
+      "default": "./dist/grale/metrics/index.js"
+    }
+  },
+  "bin": {
+    "grale-to-svg": "./dist/cli/grale-to-svg.js",
+    "grale-metrics": "./dist/cli/grale-metrics.js",
+    "grale-elk": "./dist/cli/grale-elk.js"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "svg": "tsx src/cli/grale-to-svg.ts",
+    "metrics": "tsx src/cli/grale-metrics.ts",
+    "elk": "tsx src/cli/grale-elk.ts",
+    "compare": "npm run build && node scripts/compare.mjs",
+    "dev": "npm run build && vite",
+    "app": "bash scripts/compare-app.sh",
+    "build:viewer": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@dagrejs/dagre": "^3.0.0",
+    "@sveltejs/vite-plugin-svelte": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "elkjs": "^0.11.1",
+    "svelte": "^5.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vite": "^6.0.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "esbuild@0.25.12": true
+  }
+}

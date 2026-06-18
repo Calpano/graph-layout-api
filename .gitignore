@@ -1,2 +1,10 @@
 /.claude/
 /.idea/
+/node_modules/
+/dist/
+/dist-viewer/
+/examples/out/
+/examples/runs/
+/compare.engines.json
+/scripts/compare-cale.sh
+*.tsbuildinfo

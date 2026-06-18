@@ -1,0 +1,266 @@
+= grale ↔ ELK (elk.js)
+Dr. Max Völkel <mv@maxvoelkel.de>
+:toc: left
+:toclevels: 3
+:icons: font
+:source-highlighter: highlight.js
+:idprefix:
+:idseparator: -
+
+[abstract]
+We want to add https://github.com/kieler/elkjs[elk.js] (the JS build of the
+Eclipse Layout Kernel, ELK) as an alternative engine in the comparison framework,
+alongside dagre and cale. This document analyses the ELK API and data model,
+maps it against the `xref:graph-layout-api.adoc[grale]` format, and — the point
+of the exercise — lists *what ELK can express that grale currently cannot*, so we
+know what (if anything) grale should grow before treating ELK output as a
+first-class citizen. It closes with a concrete adapter plan.
+
+Facts below are taken from `elkjs` 0.11 (`elk-api.d.ts`) and a live probe
+(`elk.knownLayoutAlgorithms()`, `elk.knownLayoutOptions()`, and a sample
+`elk.layout(...)`).
+
+== ELK in one minute
+
+[source,ts]
+----
+import ELK from 'elkjs/lib/elk.bundled.js';   // bundled = synchronous, no Web Worker
+const elk = new ELK();
+const out = await elk.layout(graph, { layoutOptions: { 'elk.algorithm': 'layered' } });
+----
+
+* `layout()` is **async** and returns a *new* graph with positions filled in.
+* ELK ships **11 layout algorithms** and **234 layout options**. Algorithm and
+  options are chosen via a flat `layoutOptions` string→string map (keys like
+  `org.eclipse.elk.algorithm`, short-form `elk.algorithm`).
+* The default distribution runs in a Web Worker; `elk.bundled.js` runs in-process
+  (what a CLI engine wants).
+
+.ELK layout algorithms (`supportedFeatures`)
+[cols="1,3",frame=ends]
+|===
+| Algorithm | Notable supported features
+
+| `layered`        | SELF_LOOPS, INSIDE_SELF_LOOPS, MULTI_EDGES, EDGE_LABELS, PORTS, COMPOUND, CLUSTERS — the Sugiyama/dagre-style layered layout
+| `force`          | MULTI_EDGES, EDGE_LABELS — force-directed
+| `stress`         | stress-majorization (good for undirected)
+| `mrtree`         | DISCONNECTED — tree layout
+| `radial`         | radial / concentric
+| `rectpacking`    | pack disconnected boxes
+| `box`            | simple box packing
+| `fixed`          | keep the coordinates already in the input (interactive)
+| `random`         | random placement (baseline)
+| `sporeOverlap` / `sporeCompaction` | overlap removal / compaction
+|===
+
+grale has **no algorithm selector** — it is a *data format*, not an engine, and
+carries only dagre's `ranker` (`network-simplex` / `tight-tree` / `longest-path`),
+which is an internal knob of one layered engine. This is the single biggest
+conceptual gap (see <<gaps>>).
+
+== The ELK graph model
+
+[source,ts]
+----
+interface ElkNode  extends ElkShape { id; children?: ElkNode[]; ports?: ElkPort[];
+                                       edges?: ElkExtendedEdge[]; }        // hierarchy
+interface ElkPort  extends ElkShape { id; }                               // x/y/w/h + options
+interface ElkLabel extends ElkShape { text?; }                            // x/y/w/h + text
+interface ElkExtendedEdge extends ElkEdge {
+  sources: string[]; targets: string[];      // n-ary, directed: a set of sources → a set of targets
+  sections?: ElkEdgeSection[];               // out: routed geometry
+  junctionPoints?: ElkPoint[];               // out: where edges merge
+  container?: string;                        // which node's coordinate system the edge lives in
+}
+interface ElkEdgeSection {
+  id; startPoint; endPoint; bendPoints?: ElkPoint[];
+  incomingShape?; outgoingShape?;            // the node/port at each end
+  incomingSections?; outgoingSections?;      // section graph for hyperedges
+}
+type LayoutOptions = { [key: string]: string };   // on the graph AND on any node/port/edge/label
+----
+
+Every element (`ElkGraphElement`) may carry `id`, `labels[]`, and its own
+`layoutOptions`. Shapes (`ElkShape`) add `x`/`y`/`width`/`height`.
+
+=== Coordinate model (differs from grale)
+
+ELK coordinates are **hierarchical**: a child's `x`/`y` is its top-left relative
+to its *parent*; an edge's points are in its `container`'s coordinate system;
+a label's `x`/`y` is relative to its owning element. Sample probe output:
+
+[source,json5]
+----
+// node 'a' inside the root: top-left RELATIVE to parent; label relative to the node
+{ "x": 12, "y": 18.67, "width": 60, "height": 40, "labels": [ { "text": "A", "x": 0, "y": 0 } ] }
+// edge 'e1' (a -> b), ORTHOGONAL routing
+{ "sections": [ { "startPoint": {"x":72,"y":32}, "endPoint": {"x":92,"y":32},
+                  "incomingShape": "a", "outgoingShape": "b" } ] }
+----
+
+grale is **flat and absolute**: node `x`/`y` is the node *centre*, origin
+top-left, y down (`xref:graph-layout-api.adoc#coordinate-model[coordinate
+model]`); edge `points` are absolute. An adapter must convert: accumulate parent
+offsets to absolutise, convert top-left→centre, and flatten `sections` →
+`points`.
+
+== grale ↔ ELK field mapping
+
+[cols="2,2,3",frame=ends,options="header"]
+|===
+| grale | ELK | Notes
+
+| `nodes[].v` (id)                | `ElkNode.id`                         | string id both
+| node `value.width`/`height`     | `ElkNode.width`/`height`             | input box size both
+| node `value.x`/`y` (centre, out/pinned) | `ElkNode.x`/`y` (top-left, relative) | *centre↔top-left*, *absolute↔relative* conversion
+| node `parent` (compound)        | nesting in `ElkNode.children[]`      | grale references a parent id; ELK physically nests
+| edges `{v,w,name?,id?}`         | `ElkExtendedEdge {id, sources:[v], targets:[w]}` | binary edge = single source/target
+| `hyperedges[].endpoints[]` (unordered) | `sources[]` + `targets[]` (directed) | ELK n-ary edges are *directed* (sources→targets); grale's are an unordered set
+| edge `value.points` (out)       | `sections[].startPoint/bendPoints/endPoint` | flatten section(s) → polyline
+| edge `value.minlen`/`weight`    | `elk.layered.*` priority/spacing options | only loosely comparable
+| node `value.ports{side:count}` + `fromPort/toPort{side,index}` | `ElkPort` + `elk.port.side`, `elk.port.index`, `elk.portConstraints` | ELK ports are first-class objects with rich constraints
+| graph `value.rankdir`           | `elk.direction` (UP/DOWN/LEFT/RIGHT) | TB→DOWN, LR→RIGHT, …
+| graph `value.nodesep/edgesep/ranksep` | `elk.spacing.*` (many)         | ELK splits spacing into ~dozen options
+| graph `value.ranker`            | `elk.layered.nodePlacement.strategy` / `…cycleBreaking` etc. | engine-internal
+| edge label `value.width/height/labelpos` | `ElkLabel` on the edge + `elk.edgeLabels.placement` | ELK labels are first-class shapes
+| node label (grale: `meta.label` only) | `ElkLabel` on the node + `elk.nodeLabels.placement` | grale has no node-label geometry
+| output `diagnostics`            | `logging` / `measureExecutionTime` (unstructured) | no structured warnings in ELK
+| `value.meta` (opaque passthrough) | extra JSON keys (not guaranteed preserved) | adapter should merge grale fields back itself
+|===
+
+[[gaps]]
+== What ELK can express that grale cannot
+
+This is the deliverable. Each item notes whether grale should grow a field, or
+whether it is better carried as opaque `meta` for the ELK adapter only.
+
+. *Algorithm family.* ELK picks among layered/force/stress/mrtree/radial/
+  rectpacking/… grale has no notion of "use a force layout". → **Recommend:** a
+  graph-level hint, but namespaced as engine-specific (e.g.
+  `value.meta.engine = { algorithm: 'force' }`) rather than a core grale field —
+  grale stays engine-agnostic; the adapter reads it.
+. *Edge routing style.* ELK `elk.edgeRouting` = `ORTHOGONAL` | `POLYLINE` |
+  `SPLINES`. grale draws *one* style (routed poly-lines + `cornerRadius`). →
+  **Candidate core addition:** `edgeRouting?: 'orthogonal'|'polyline'|'spline'`
+  on the graph label; it is renderer/engine-meaningful and small.
+. *Per-element layout options.* Any ELK node/edge/port carries its own
+  `layoutOptions` (e.g. a subtree laid out with a different algorithm, a node with
+  custom spacing, a port pinned to a side). grale has only a *global* graph
+  `value` plus a few fixed per-element fields. → **Recommend:** opaque
+  `meta` passthrough; do not mirror 234 options in grale.
+. *Port constraints / port model.* ELK ports are objects with `elk.port.side`,
+  `elk.port.index`, `elk.port.borderOffset`, and `elk.portConstraints`
+  (`FREE` | `FIXED_SIDE` | `FIXED_ORDER` | `FIXED_RATIO` | `FIXED_POS`), plus port
+  labels and port spacing. grale ports are *slot counts per side* + a
+  `{side,index}` reference — no constraint levels, no per-port labels/size. →
+  **Possible core addition:** a port-constraint level on `ports`; otherwise meta.
+. *First-class labels.* ELK labels (node, edge, *and port*) are shapes with
+  `text`, `width`, `height`, position, and placement options. grale models only an
+  *edge* label box (`width/height/labelpos/labeloffset`, dagre-inherited) and
+  otherwise pushes label text into `meta`. → grale deliberately leaves label
+  *text* to `meta`; but it lacks node/port label *geometry* a layouter can reserve
+  space for. Consider node-label `width/height` if we want size-aware node labels.
+. *Directed n-ary edges.* ELK edges are `sources[] → targets[]` (ordered,
+  directed). grale `hyperedges` are an *unordered* endpoint set. The directed
+  hyperedge (e.g. "these 3 producers feed these 2 consumers") is not expressible
+  in grale today. → **Candidate addition** if we care: tag hyperedge endpoints
+  with a role, or split into `sources`/`targets`.
+. *Junction points.* ELK reports `junctionPoints` (where routed edges merge).
+  grale's hyperedge `tree` has `branch`/`crossing` points but a *binary* edge has
+  no junction concept. Minor.
+. *Hierarchical coordinates + `hierarchyHandling`.* ELK lays out nested graphs
+  with per-level algorithms and `INCLUDE_CHILDREN` cross-hierarchy edges, in
+  relative coordinates. grale is flat/absolute with a permeable cluster boundary.
+  Functionally overlapping, but ELK's model is richer for deep nesting.
+. *Spacing granularity.* ELK exposes node-node, edge-edge, edge-node, port-port,
+  component, label spacings independently (dozens). grale has three
+  (`nodesep`/`edgesep`/`ranksep`). → meta if ever needed.
+. *Layout-option richness* (234): model order, crossing-minimisation strategy,
+  node-placement (Brandes-Köpf / network-simplex), partitioning, wrapping, aspect
+  ratio, content alignment, high-degree-node handling, … None are grale concerns;
+  all are adapter meta.
+
+== What grale expresses that ELK lacks
+
+So the adapter knows to *echo/ignore* these (ELK can't honour them):
+
+* `focus` node(s) — no ELK equivalent.
+* `prevLayouts` history + `stability` — ELK has the `fixed` algorithm /
+  interactive mode (one prior position via coordinates), but no multi-frame
+  history with re-anchoring of returning nodes.
+* `pinned` per node — approximated only by the `fixed` algorithm (all-or-nothing),
+  not a hard pin within a free layout.
+* per-edge `prefDir` — ELK has global `direction` + `priority`/layer constraints,
+  not a per-edge preferred direction.
+* `hidden` links (constrain but don't draw) and `weight: 0` (draw but don't
+  constrain) — no direct ELK equivalents.
+* `markers` registry, `startMarker`/`endMarker` — rendering concern; ELK has none.
+* `debug` overlay layers, structured `diagnostics.warnings`, per-point `normals`,
+  reported `crossings` — ELK outputs `bendPoints`/`junctionPoints` only.
+* opaque `meta` passthrough as a contract — ELK does not guarantee preserving
+  unknown keys.
+
+*Conclusion:* the two formats overlap on the dagre-subset core (nodes, sizes,
+edges, compound, ports, directions, spacing) but diverge at the edges. ELK is
+broader on *engine control* (algorithms, routing, per-element options, port
+constraints, labels); grale is broader on *interaction/UX* (focus, stability,
+pins, prefDir, hidden links, markers, debug, diagnostics). Neither is a superset.
+
+== Running elk.js as a grale engine (adapter)
+
+*Implemented* at `src/cli/grale-elk.ts` (built-in engine `elk`, also `npm run elk`
+/ `grale-elk`). ELK fits the `xref:engine-contract.adoc[engine contract]` via this
+adapter that reads grale on stdin and writes grale on stdout:
+
+. *grale → ELK.* Build an `ElkNode` tree: map `nodes[]` to `children` (nesting by
+  `parent` for compound), `edges[]` to `ElkExtendedEdge{sources:[v],targets:[w]}`,
+  `value.ports` to `ElkPort`s, edge/node label sizes to `ElkLabel`s. Translate
+  `rankdir`→`elk.direction`. Read engine knobs from `value.meta.engine` (algorithm,
+  edgeRouting, spacing) into `layoutOptions`.
+. *Lay out.* `await elk.layout(elkGraph, { layoutOptions })` with
+  `elk.bundled.js` (sync, no worker).
+. *ELK → grale.* Walk the result accumulating parent offsets to **absolutise**
+  coordinates; convert node top-left → **centre** (`x+w/2`, `y+h/2`); flatten each
+  edge's `sections` (startPoint + bendPoints + endPoint) into `value.points`;
+  copy port/label positions back. **Merge onto the original grale graph** so all
+  grale-only fields (`meta`, `markers`, `prefDir`, ids, …) survive — don't rely on
+  ELK echoing them.
+. *Diagnostics.* Synthesize grale `diagnostics` (timing from
+  `measureExecutionTime`; warnings for anything dropped).
+
+=== Gotchas
+
+* *Async + worker.* Use `elk.bundled.js` for a synchronous CLI; the default
+  build needs a Web Worker.
+* *Relative coordinates.* The #1 source of bugs — always absolutise before
+  emitting grale.
+* *n-ary edges need decomposition.* ELK's algorithms only route *simple* edges
+  — a true multi-source/target edge throws `Passed edge is not 'simple'`. The
+  adapter therefore decomposes each grale hyperedge into a tiny dummy *hub* node
+  (a Steiner point ELK places) plus one simple edge per endpoint, then recombines
+  the arm routes into the grale hyperedge `tree` (hub → `branch` point, each arm →
+  an `endpoint` at its node, with `bend`s in between).
+* *Label sizes.* ELK needs `width`/`height` on labels to reserve space; supply
+  them (measure or estimate) or labels overlap.
+
+=== Recommended grale changes (small)
+
+Only one looks worth promoting to *core* grale; the rest stay engine-`meta`:
+
+[cols="3,1,3",frame=ends,options="header"]
+|===
+| Capability | Where | Rationale
+
+| `edgeRouting: 'orthogonal'\|'polyline'\|'spline'` (graph label) | core | small, renderer-meaningful, requested by many engines
+| algorithm hint, ELK `layoutOptions`, port constraints, spacing granularity | `value.meta.engine` | engine-specific; keeps grale engine-agnostic
+| directed hyperedges (sources→targets) | defer | only if a use case needs it; today's hyperedges are unordered by design
+| node/port label geometry | defer | grale leaves label text to `meta`; add sizes only if size-aware node labels are needed
+|===
+
+== See also
+
+* `xref:graph-layout-api.adoc[]` — the grale API.
+* `xref:engine-contract.adoc[]` — what an engine must do to plug into the harness.
+* `xref:dagre-js.adoc[]` — the dagre baseline grale supersets.
+* https://eclipse.dev/elk/reference.html[ELK reference] (algorithms + all options) ·
+  https://github.com/kieler/elkjs[elkjs]
