@@ -1,9 +1,27 @@
-# grale — a Graph Layout Engine API
+# Graph Layout Engine API (grale-api)
 
-grale is a **gra**ph **l**ayout **e**ngine API, defined as JSON input and output specifications:
-it takes the serialised form of a dagre graph (graphlib's `json.write` format) and returns the
+grale is a universal **gra**ph **l**ayout **e**ngine API, defined as JSON input and output
+specifications. It is designed as a superset of [dagre](https://github.com/dagrejs/dagre)
+(graphlib's `json.write` format): it takes the serialised form of a dagre graph and returns the
 same structure with positions filled in — plus a set of capabilities dagre lacks. Any dagre graph
 is a valid grale request **unchanged**; grale only adds optional fields.
+
+Minimal input for a grale engine — nodes with their sizes and the edges between them:
+
+```json
+{
+  "nodes": [
+    { "v": "a", "value": { "width": 60, "height": 40 } },
+    { "v": "b", "value": { "width": 60, "height": 40 } }
+  ],
+  "edges": [
+    { "v": "a", "w": "b" }
+  ]
+}
+```
+
+The engine returns the same structure with `x`/`y` filled in on each node and a `points` polyline
+on each edge.
 
 This repository has **two core parts**, each in its own directory with its own README:
 
