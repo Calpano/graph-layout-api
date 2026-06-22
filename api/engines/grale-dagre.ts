@@ -12,12 +12,15 @@
  * excludes process spawn, parse, and serialise.
  */
 import dagre from '@dagrejs/dagre';
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import type { graleGraph } from '../types';
 
 const DAGRE_OPTS = ['rankdir', 'align', 'nodesep', 'edgesep', 'ranksep', 'marginx', 'marginy', 'acyclicer', 'ranker'] as const;
 
-function layout(input: graleGraph): graleGraph {
+/** Lay out a grale graph with dagre (in-process). Exported so the eval app can
+ * run it in a worker thread without spawning a subprocess. */
+export function layout(input: graleGraph): graleGraph {
   const g = dagre.graphlib.json.read(structuredClone(input));
   const gl = (g.graph() ?? {}) as Record<string, unknown>;
   // honour dagre options passed via the run config (value.meta.engine.*)
@@ -41,4 +44,7 @@ function main(): void {
   process.stdout.write(JSON.stringify(out));
 }
 
-main();
+// only run the CLI when executed directly — not when imported (e.g. by the worker).
+// realpathSync resolves symlinks (node_modules/grale-api is a symlink) so the
+// invoked path matches import.meta.url, which Node reports as the real path.
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) main();

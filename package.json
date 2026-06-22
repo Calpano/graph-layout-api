@@ -15,6 +15,14 @@
       "types": "./dist/viewer/render/index.d.ts",
       "default": "./dist/viewer/render/index.js"
     },
+    "./engines/dagre": {
+      "types": "./dist/api/engines/grale-dagre.d.ts",
+      "default": "./dist/api/engines/grale-dagre.js"
+    },
+    "./engines/elk": {
+      "types": "./dist/api/engines/grale-elk.d.ts",
+      "default": "./dist/api/engines/grale-elk.js"
+    },
     "./viewer/GraleView.svelte": "./viewer/GraleView.svelte",
     "./viewer/GraleElement.svelte": "./viewer/GraleElement.svelte"
   },

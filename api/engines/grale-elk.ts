@@ -20,7 +20,8 @@
  * are recombined into the grale hyperedge `tree` (hub → branch point, each arm →
  * endpoint, with bends in between).
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import ELK from 'elkjs/lib/elk.bundled.js';
 import type { graleGraph, HyperedgePoint, HyperedgeSegment } from '../types.js';
 
@@ -149,16 +150,25 @@ function applyElk(g: graleGraph, res: ElkN, plan: { warnings: Warning[]; hypers:
   return g;
 }
 
-async function main(): Promise<void> {
-  const arg = process.argv[2];
-  const text = arg && !arg.startsWith('-') ? readFileSync(arg, 'utf8') : readFileSync(0, 'utf8');
-  const g = JSON.parse(text) as graleGraph;
+/** Lay out a grale graph with elk.js. Exported so the eval app can run it in a
+ * worker thread without spawning a subprocess. */
+export async function layout(g: graleGraph): Promise<graleGraph> {
   const { root, layoutOptions, warnings, hypers } = buildElk(g);
   const elk = new (ELK as unknown as { new (): { layout(n: ElkN, a?: { layoutOptions?: Record<string, string> }): Promise<ElkN> } })();
   const t0 = Date.now();
   const res = await elk.layout(root, { layoutOptions });
-  const out = applyElk(g, res, { warnings, hypers }, (Date.now() - t0) * 1000);
+  return applyElk(g, res, { warnings, hypers }, (Date.now() - t0) * 1000);
+}
+
+async function main(): Promise<void> {
+  const arg = process.argv[2];
+  const text = arg && !arg.startsWith('-') ? readFileSync(arg, 'utf8') : readFileSync(0, 'utf8');
+  const out = await layout(JSON.parse(text) as graleGraph);
   process.stdout.write(JSON.stringify(out));
 }
 
-main().catch((e) => { process.stderr.write(`grale-elk: ${e instanceof Error ? e.message : String(e)}\n`); process.exit(1); });
+// only run the CLI when executed directly — not when imported (e.g. by the worker).
+// realpathSync resolves symlinks (node_modules/grale-api is a symlink) so the
+// invoked path matches import.meta.url, which Node reports as the real path.
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href)
+  main().catch((e) => { process.stderr.write(`grale-elk: ${e instanceof Error ? e.message : String(e)}\n`); process.exit(1); });

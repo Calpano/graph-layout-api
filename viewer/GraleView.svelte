@@ -7,7 +7,8 @@
     graph = null,
     debug = false,
     padding = 24,
-  }: { graph?: unknown; debug?: boolean; padding?: number } = $props();
+    layersVisible = true,
+  }: { graph?: unknown; debug?: boolean; padding?: number; layersVisible?: boolean } = $props();
 
   function safeParse(s: string): unknown {
     try {
@@ -67,7 +68,8 @@
     const walk = (nodes: DebugLayer[], prefix: string) => {
       for (const l of nodes) {
         const path = prefix ? `${prefix}/${l.name}` : l.name;
-        const visible = overrides.has(path) ? overrides.get(path)! : l.visible !== false;
+        // default-off when layersVisible is false; otherwise honour the layer's own `visible`
+        const visible = overrides.has(path) ? overrides.get(path)! : layersVisible && l.visible !== false;
         if (!visible) set.add(path);
         walk(childLayers(l), path);
       }
@@ -253,7 +255,7 @@
   </div>
 
   <div class="panel">
-    <button class="panel-head" onclick={() => (panelOpen = !panelOpen)}>
+    <button class="panel-head" title="show / hide the debug overlays and layers panel" onclick={() => (panelOpen = !panelOpen)}>
       {panelOpen ? '▾' : '▸'} debug
     </button>
     {#if panelOpen}
