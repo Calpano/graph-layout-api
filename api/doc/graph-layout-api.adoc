@@ -181,11 +181,42 @@ and <<edge-label-additions>>. It makes two purely-additive envelope extensions: 
 `id` on each edge (see <<edge-id>>) and a top-level `hyperedges[]` array (see
 <<hyperedges>>). A document that uses none of these is byte-for-byte a dagre document.
 
+[[envelope-conventions]]
+==== Inherited envelope conventions (normative)
+
+These keys are *not* a grale invention — they come from graphlib's serialised form
+(`json.write`, the format `xref:dagre-js.adoc#the-envelope[]` specifies) — but grale adopts
+them unchanged and they are **normative for grale**: a grale producer MUST emit them and a
+grale consumer MUST honour them with exactly these meanings. They are restated here so a
+grale document is self-describing without chasing the dagre baseline.
+
+[cols="1,1,3",frame=ends]
+|===
+| Key | Where | Meaning (held identically to dagre)
+
+| `options` | envelope | `{ directed, multigraph, compound }` mode flags; defaults `true` / `false` / `false`.
+| `nodes[]` | envelope | one entry per node.
+| `edges[]` | envelope | one entry per binary edge.
+| `value`   | graph / node / edge | the *label* object carrying that element's attributes; omitted when the element has no label. This is where every grale label addition lives.
+| `v`       | node, edge | a node's id; on an edge, its *source* node id.
+| `w`       | edge | an edge's *target* node id.
+| `name`    | edge | disambiguates parallel edges; present only in a multigraph (`options.multigraph === true`).
+| `parent`  | node | the containing node's id; present only in a compound graph (`options.compound === true`).
+|===
+
+* An edge's structural identity is the triple `{ v, w, name? }` (grale adds an optional
+  `id` beside it — see <<edge-id>> — but the triple remains the identity).
+* `value` is omitted when an element has no label; grale, like dagre, writes its computed
+  results back into these same `value` objects (see <<layout-graph,`layout(graph)`>>).
+* `v`, `w`, `name`, `parent` are envelope-level keys — they sit on the node / edge *object*,
+  beside `value`, never inside it.
+
 NOTE: In a compound graph grale allows edges that *cross cluster boundaries* — including
 an edge between a node and one of its own ancestors (child ↔ parent). dagre rejects these
 (it crashes with "Cannot set property 'rank' of undefined" — issues #238, #236, #426);
 grale treats a cluster boundary as permeable and routes the edge through it.
 
+[[layout-graph]]
 === `layout(graph)`
 
 [source,ts]
@@ -1130,3 +1161,32 @@ export function layout(graph: graleGraph): graleGraph;
 | debug toggles (`logLevel`, `visualDebug`) | ➕ added | dagre has none
 | debug overlay layers (`debug`)     | ➕ added | named, nestable; line/circle/rect/text leaves
 |===
+
+=== Graph-format features
+
+The graph-format registry (`graph-features.adoc`) classifies every format against
+a fixed set of capability *feature-ids*. For grale 1.0.0, per feature-id — which
+the format uses and which it does not:
+
+[source]
+----
+format:grale-1.0.0 ..does not use.. multiple-graphs-per-document ,, one graph per document
+format:grale-1.0.0 ..uses.. nodes
+format:grale-1.0.0 ..uses.. undirected-edges ,, options.directed false
+format:grale-1.0.0 ..uses.. directed-edges ,, options.directed true
+format:grale-1.0.0 ..does not use.. mixed-directionality-edges ,, directedness is graph-level via options.directed
+format:grale-1.0.0 ..uses.. hyperedges ,, n-ary hyperedges[] array, GraphML-style
+format:grale-1.0.0 ..does not use.. edges-on-edges
+format:grale-1.0.0 ..uses.. nested-graphs-in-nodes ,, compound graphs via node parent (options.compound)
+format:grale-1.0.0 ..does not use.. nested-graphs-in-edges
+format:grale-1.0.0 ..does not use.. nested-graphs-in-graphs
+format:grale-1.0.0 ..uses.. node-labels ,, node value/meta label
+format:grale-1.0.0 ..uses.. edge-labels ,, edge value/meta label
+format:grale-1.0.0 ..uses.. attributes-on-nodes ,, node value plus opaque meta
+format:grale-1.0.0 ..uses.. attributes-on-edges ,, edge value (weight, lineWidth, minlen) plus opaque meta
+format:grale-1.0.0 ..uses.. attributes-on-graphs ,, graph value label plus opaque meta
+format:grale-1.0.0 ..does not use.. typed-edges ,, markers are visual, not a semantic edge type
+----
+
+The registry records the same matrix as its canonical machine-readable source
+(`formats/json/grale/grale-1.0.0.adoc`, using `..supports..` / `..lacks..`).
